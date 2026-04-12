@@ -21,8 +21,9 @@ import one.wabbit.web.common.Etiquette
 import one.wabbit.web.common.Timeouts
 import one.wabbit.web.common.applyEtiquette
 import one.wabbit.web.common.applyTimeouts
-import one.wabbit.web.common.retryingHttpCall
-import one.wabbit.web.common.safeBodyPrefix
+import one.wabbit.web.common.consumeRawBodyPrefixUtf8OrNull
+import one.wabbit.web.common.responseBodySampleOrNull
+import one.wabbit.web.common.retryingIdempotentHttpCall
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
@@ -115,7 +116,7 @@ class KtorSpringerNatureApi(
         }
 
         val response = try {
-            retryingHttpCall {
+            retryingIdempotentHttpCall {
                 httpClient.get(config.baseUrl) {
                     expectSuccess = true
                     applyEtiquette(config.etiquette)
@@ -134,7 +135,7 @@ class KtorSpringerNatureApi(
 
     private suspend fun HttpResponse.decodeSearchResponse(url: String): SearchResponse {
         if (!status.isSuccess()) {
-            val sample = runCatching { safeBodyPrefix(2048) }.getOrNull()
+            val sample = consumeRawBodyPrefixUtf8OrNull(2048)
             throw SpringerApiError.Http(url, status.value, sample)
         }
 
@@ -159,7 +160,7 @@ typealias SpringerAPI = KtorSpringerNatureApi
 private suspend fun Throwable.toSpringerError(url: String): SpringerApiError {
     if (this is CancellationException) throw this
     return if (this is ResponseException) {
-        val sample = runCatching { response.safeBodyPrefix(2048) }.getOrNull()
+        val sample = responseBodySampleOrNull()
         SpringerApiError.Http(url, response.status.value, sample, this)
     } else {
         SpringerApiError.Network(url, this)
